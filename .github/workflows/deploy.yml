@@ -23,7 +23,11 @@ jobs:
         run: terraform init
 
       - name: Terraform Plan
-        run: terraform plan
+        env:
+            SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
+        run: terraform plan -var="ssh_public_key=$SSH_PUBLIC_KEY"   
 
       - name: Terraform Apply
-        run: terraform apply -auto-approve
+        env:
+            SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
+        run: terraform apply -auto-approve -var="ssh_public_key=$SSH_PUBLIC_KEY"

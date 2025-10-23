@@ -19,3 +19,7 @@ Thumbs.db
 
 # Sensitive files
 *.auto.tfvars
+
+# Ignore Terraform variable files (often contain secrets or sensitive config)
+*.tfvars
+*.auto.tfvars

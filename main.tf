@@ -38,4 +38,5 @@ resource "proxmox_vm_qemu" "rhel9_test" {
   ciuser     = "test"                 # change to your desired initial user
   cipassword = "abc123"             # change to your desired initial user password
   ipconfig0  = "ip=dhcp"
+  sshkeys    = var.ssh_public_key
 }
