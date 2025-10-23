@@ -15,7 +15,7 @@ provider "proxmox" {
 resource "proxmox_vm_qemu" "rhel9_test" {
   name        = "rhel9-test-vm"
   target_node = "pve1"                    # change to your node name
-  clone       = "RHEL-9.6-DHCP-Locked-9.6-ci"          # change to your template name
+  clone       = "rhel-terraform"          # change to your template name
   full_clone  = true
 
   cores       = 4
@@ -35,13 +35,17 @@ resource "proxmox_vm_qemu" "rhel9_test" {
   }
 
   os_type    = "cloud-init"
-  ciuser     = "test"                 # change to your desired initial user
-  cipassword = "abc123"             # change to your desired initial user password
   ipconfig0  = "ip=dhcp"
-  sshkeys    = var.ssh_public_key
- 
-  agent = 1
-  boot  = "order=scsi0;ide0"
+  agent      = 1
+  boot       = "order=scsi0;ide0"
+
+  # Using ci_config to pass user data
+    ci_config {
+        user       = "test"
+        password   = "abc123"
+        ssh_keys   = [var.ssh_public_key] # Note the square brackets for a list
+        ssh_pwauth = true                 # Ensures password login remains enabled
+  }
 
   serial {
     id   = 0
