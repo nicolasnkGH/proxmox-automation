@@ -2,7 +2,7 @@ terraform {
   required_providers {
     proxmox = {
       source  = "telmate/proxmox"
-      version = ">=2.9.11"
+      version = ">=3.0.2"
     }
   }
 }
@@ -28,23 +28,21 @@ resource "proxmox_vm_qemu" "rhel9_test" {
   }
 
   disk {
-    slot    = 0
-    size    = "250G"
-    storage = "local-zfs"
-    type    = "scsi"
-  }
+  slot    = "ide0"
+  type    = "cloudinit"
+  storage = "local-zfs"
+}
 
   os_type    = "cloud-init"
   ipconfig0  = "ip=dhcp"
   agent      = 1
   boot       = "order=scsi0;ide0"
 
-  # Using ci_config to pass user data
-    ci_config {
-        user       = "test"
-        password   = "abc123"
-        ssh_keys   = [var.ssh_public_key] # Note the square brackets for a list
-        ssh_pwauth = true                 # Ensures password login remains enabled
+  ci_config {
+    user       = "test"
+    password   = "abc123"
+    ssh_keys   = [var.ssh_public_key] 
+    ssh_pwauth = true 
   }
 
   serial {
