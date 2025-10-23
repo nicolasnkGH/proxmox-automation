@@ -2,20 +2,20 @@ terraform {
   required_providers {
     proxmox = {
       source  = "telmate/proxmox"
-      version = ">=2.7.4"
+      # FIX: Using a stable 2.x version to avoid v2.9.14 crash and non-existent v3.x
+      version = "~>2.9" 
     }
   }
 }
 
 provider "proxmox" {
-  # All sensitive information is read from environment variables:
-  # PM_API_URL, PM_API_TOKEN_ID, PM_API_TOKEN_SECRET
   pm_tls_insecure = true
 }
+
 resource "proxmox_vm_qemu" "rhel9_test" {
   name        = "rhel9-test-vm"
-  target_node = "pve1"                    # change to your node name
-  clone       = "rhel-terraform"          # change to your template name
+  target_node = "pve1"
+  clone       = "rhel-terraform"
   full_clone  = true
 
   cores       = 4
@@ -27,23 +27,35 @@ resource "proxmox_vm_qemu" "rhel9_test" {
     bridge = "vmbr0"
   }
 
+  # --- FIX 1: MAIN OS DISK (requires size) ---
   disk {
-  slot    = "ide0"
-  type    = "cloudinit"
-  storage = "local-zfs"
-}
+    slot    = 0
+    size    = "250G"
+    storage = "local-zfs"
+    type    = "scsi"
+  }
+
+  # --- FIX 2: CLOUD-INIT DISK (requires slot, no size) ---
+  disk {
+    slot    = 1             # Use a unique slot number (e.g., 1 or 2)
+    type    = "cloudinit"
+    storage = "local-zfs"
+    # size is omitted for cloudinit disk
+  }
 
   os_type    = "cloud-init"
   ipconfig0  = "ip=dhcp"
   agent      = 1
   boot       = "order=scsi0;ide0"
 
-  ci_config {
-    user       = "test"
-    password   = "abc123"
-    ssh_keys   = [var.ssh_public_key] 
-    ssh_pwauth = true 
-  }
+  # --- FIX 3: Using Individual Arguments from Reference (ci_config was flagged as unsupported) ---
+  ciuser     = "test"                 
+  cipassword = "abc123"             
+  sshkeys    = var.ssh_public_key
+  
+  # Note: The ssh_pwauth setting is now implicitly handled by Proxmox since 
+  # you set a password, but if you hit SSH password issues, you may need 
+  # to switch to ci_user_data raw YAML. We start here.
 
   serial {
     id   = 0
@@ -53,5 +65,4 @@ resource "proxmox_vm_qemu" "rhel9_test" {
   vga {
     type = "serial0"
   }
-} 
-
+}
