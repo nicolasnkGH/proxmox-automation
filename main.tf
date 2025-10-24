@@ -49,7 +49,7 @@ resource "proxmox_vm_qemu" "ubuntu-24-ci" {
   os_type    = "cloud-init"
   ipconfig0  = "ip=dhcp"
   agent      = 1
-  boot       = "order=scsi0;ide0"
+  boot       = "order=scsi0"
 
   ciuser     = var.vm_user
   cipassword = var.vm_password
