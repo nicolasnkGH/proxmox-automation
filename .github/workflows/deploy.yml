@@ -25,17 +25,11 @@ jobs:
       - name: Terraform Plan
         env:
             SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
-            VM_PASSWORD: ${{ secrets.VM_PASSWORD }}  # Pass the new password secret
-        run: terraform plan \
-          -var="ssh_public_key=$SSH_PUBLIC_KEY" \
-          -var="vm_user=test" \
-          -var="vm_password=$VM_PASSWORD"  
+            VM_PASSWORD: ${{ secrets.VM_PASSWORD }}
+        run: terraform plan -var="ssh_public_key=$SSH_PUBLIC_KEY" -var="vm_user=test" -var="vm_password=$VM_PASSWORD"
 
       - name: Terraform Apply
         env:
             SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
-            VM_PASSWORD: ${{ secrets.VM_PASSWORD }}  # Pass the new password secret
-        run: terraform apply -auto-approve \
-          -var="ssh_public_key=$SSH_PUBLIC_KEY" \
-          -var="vm_user=test" \
-          -var="vm_password=$VM_PASSWORD"
+            VM_PASSWORD: ${{ secrets.VM_PASSWORD }}
+        run: terraform apply -auto-approve -var="ssh_public_key=$SSH_PUBLIC_KEY" -var="vm_user=test" -var="vm_password=$VM_PASSWORD"
