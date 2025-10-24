@@ -10,10 +10,18 @@ terraform {
 
 provider "proxmox" {
   pm_tls_insecure = true
+  pm_log_enable = true
+  pm_log_file   = "terraform-plugin-proxmox.log"
+  pm_debug      = true
+  pm_log_levels = {
+    _default    = "debug"
+    _capturelog = ""
+  }
 }
 
 resource "proxmox_vm_qemu" "rhel9_test" {
-  name        = "rhel9-test-vm"
+  count = 1
+  name        = "rhel9-vm-${count.index + 1}"
   target_node = "pve1"
   clone       = "rhel-terraform"
   full_clone  = true
@@ -34,15 +42,7 @@ resource "proxmox_vm_qemu" "rhel9_test" {
     storage = "local-zfs"
     type    = "scsi"
   }
-
-  # --- FIX 2: CLOUD-INIT DISK (requires slot, no size) ---
-  disk {
-    slot    = 1             # Use a unique slot number (e.g., 1 or 2)
-    type    = "cloudinit"
-    storage = "local-zfs"
-    # size is omitted for cloudinit disk
-  }
-
+  
   os_type    = "cloud-init"
   ipconfig0  = "ip=dhcp"
   agent      = 1
