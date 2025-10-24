@@ -2,7 +2,7 @@ terraform {
   required_providers {
     proxmox = {
       source  = "telmate/proxmox"
-      # FIX: Using a stable 2.x version to avoid v2.9.14 crash and non-existent v3.x
+      # Check each version for syntax updates
       version = "3.0.2-rc05"
     }
   }
@@ -25,7 +25,7 @@ resource "proxmox_vm_qemu" "ubuntu-24-ci" {
   target_node = "pve1"
   clone       = "ubuntu-24-ci"
   full_clone  = true
-
+  scsihw      = "virtio-scsi-single"
   cpu {
     cores     = 4  # Cores is correctly here
     sockets   = 1  # FIX: Sockets moved inside the cpu block
@@ -44,6 +44,12 @@ resource "proxmox_vm_qemu" "ubuntu-24-ci" {
     size    = "32G"
     storage = "local-zfs"
     type    = "disk"
+  }
+#   --- FIX 2: CLOUD-INIT DISK ---
+  disk {
+    slot    = "ide2"       
+    type    = "cloudinit"
+    storage = "local-zfs" 
   }
 
   os_type    = "cloud-init"
