@@ -31,6 +31,7 @@ resource "proxmox_vm_qemu" "ubuntu-24-ci" {
   memory      = 4096
 
   network {
+    id     = 0
     model  = "virtio"
     bridge = "vmbr0"
   }
@@ -48,22 +49,9 @@ resource "proxmox_vm_qemu" "ubuntu-24-ci" {
   agent      = 1
   boot       = "order=scsi0;ide0"
 
-  # --- FIX 3: Using Individual Arguments from Reference (ci_config was flagged as unsupported) ---
-  ci_config {
-    user_data = <<-EOT
-      #cloud-config
-      users:
-        - name: test
-          groups: wheel
-          sudo: ALL=(ALL) NOPASSWD:ALL
-          shell: /bin/bash
-          passwd: abc123
-          ssh_authorized_keys:
-            - ${var.ssh_public_key}
-      ssh_pwauth: True
-      chpasswd: { expire: false }
-    EOT
-  }
+  ciuser     = var.vm_user
+  cipassword = var.vm_password
+  sshkeys    = var.ssh_public_key
   
   serial {
     id   = 0
