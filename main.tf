@@ -42,21 +42,27 @@ resource "proxmox_vm_qemu" "rhel9_test" {
     storage = "local-zfs"
     type    = "scsi"
   }
-  
+
   os_type    = "cloud-init"
   ipconfig0  = "ip=dhcp"
   agent      = 1
   boot       = "order=scsi0;ide0"
 
   # --- FIX 3: Using Individual Arguments from Reference (ci_config was flagged as unsupported) ---
-  ciuser     = "test"                 
-  cipassword = "abc123"             
-  sshkeys    = var.ssh_public_key
+  ci_user_data = <<-EOT
+      #cloud-config
+      users:
+        - name: test
+          groups: wheel
+          sudo: ALL=(ALL) NOPASSWD:ALL
+          shell: /bin/bash
+          passwd: abc123
+          ssh_authorized_keys:
+            - ${var.ssh_public_key}
+      ssh_pwauth: True 
+      chpasswd: { expire: false }
+  EOT
   
-  # Note: The ssh_pwauth setting is now implicitly handled by Proxmox since 
-  # you set a password, but if you hit SSH password issues, you may need 
-  # to switch to ci_user_data raw YAML. We start here.
-
   serial {
     id   = 0
     type = "socket"
