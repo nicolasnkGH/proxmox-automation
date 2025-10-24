@@ -26,8 +26,10 @@ resource "proxmox_vm_qemu" "ubuntu-24-ci" {
   clone       = "ubuntu-24-ci"
   full_clone  = true
 
-  cores       = 4
-  sockets     = 1
+  sockets     = 1           # Sockets remains here
+  cpu {
+    cores     = 4           # FIX 3: Move cores inside cpu block
+  }
   memory      = 4096
 
   network {
@@ -38,10 +40,10 @@ resource "proxmox_vm_qemu" "ubuntu-24-ci" {
 
   # --- FIX 1: MAIN OS DISK (requires size) ---
   disk {
-    slot    = 0
+    slot    = "scsi0"
     size    = "32G"
     storage = "local-zfs"
-    type    = "scsi"
+    type    = "disk"
   }
 
   os_type    = "cloud-init"
