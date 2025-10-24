@@ -26,9 +26,9 @@ resource "proxmox_vm_qemu" "ubuntu-24-ci" {
   clone       = "ubuntu-24-ci"
   full_clone  = true
 
-  sockets     = 1           # Sockets remains here
   cpu {
-    cores     = 4           # FIX 3: Move cores inside cpu block
+    cores     = 4  # Cores is correctly here
+    sockets   = 1  # FIX: Sockets moved inside the cpu block
   }
   memory      = 4096
 

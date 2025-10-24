@@ -1,4 +1,4 @@
-name: Deploy Proxmox RHEL VM
+name: Deploy Proxmox Ubuntu VM
 
 on:
   workflow_dispatch:
