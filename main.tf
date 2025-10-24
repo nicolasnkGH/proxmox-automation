@@ -3,7 +3,7 @@ terraform {
     proxmox = {
       source  = "telmate/proxmox"
       # FIX: Using a stable 2.x version to avoid v2.9.14 crash and non-existent v3.x
-      version = "~>2.9" 
+      version = "3.0.2-rc05"
     }
   }
 }
@@ -19,11 +19,11 @@ provider "proxmox" {
   }
 }
 
-resource "proxmox_vm_qemu" "rhel9_test" {
+resource "proxmox_vm_qemu" "ubuntu-24-ci" {
   count = 1
-  name        = "rhel9-vm-${count.index + 1}"
+  name        = "ubuntu-24-ci-${count.index + 1}"
   target_node = "pve1"
-  clone       = "rhel-terraform"
+  clone       = "ubuntu-24-ci"
   full_clone  = true
 
   cores       = 4
@@ -38,7 +38,7 @@ resource "proxmox_vm_qemu" "rhel9_test" {
   # --- FIX 1: MAIN OS DISK (requires size) ---
   disk {
     slot    = 0
-    size    = "250G"
+    size    = "32G"
     storage = "local-zfs"
     type    = "scsi"
   }
@@ -49,7 +49,8 @@ resource "proxmox_vm_qemu" "rhel9_test" {
   boot       = "order=scsi0;ide0"
 
   # --- FIX 3: Using Individual Arguments from Reference (ci_config was flagged as unsupported) ---
-  ci_user_data = <<-EOT
+  ci_config {
+    user_data = <<-EOT
       #cloud-config
       users:
         - name: test
@@ -59,9 +60,10 @@ resource "proxmox_vm_qemu" "rhel9_test" {
           passwd: abc123
           ssh_authorized_keys:
             - ${var.ssh_public_key}
-      ssh_pwauth: True 
+      ssh_pwauth: True
       chpasswd: { expire: false }
-  EOT
+    EOT
+  }
   
   serial {
     id   = 0
