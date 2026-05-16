@@ -23,3 +23,10 @@ Thumbs.db
 # Ignore Terraform variable files (often contain secrets or sensitive config)
 *.tfvars
 *.auto.tfvars
+
+# Terraform provider plugin logs
+terraform-plugin-proxmox.log
+
+# GitHub Actions runner artifacts
+actions-runner/
+runner-setup/

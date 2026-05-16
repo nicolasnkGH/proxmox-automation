@@ -1,127 +1,296 @@
 # Proxmox VM Deployment with Terraform and Cloud-Init
 
-This project demonstrates how to automate the deployment of a Virtual Machine (VM) on Proxmox VE using **Terraform** for Infrastructure as Code (IaC) and **Cloud-Init** for initial configuration.
+[![Terraform](https://img.shields.io/badge/Terraform-3.0.2-%237B42BC.svg)](https://www.terraform.io/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Proxmox VE](https://img.shields.io/badge/Proxmox-VE-blue.svg)](https://www.proxmox.com/)
+[![Platform: Linux](https://img.shields.io/badge/Platform-Linux-orange.svg)]()
 
-We utilized a **base Ubuntu Cloud Image** (though the troubleshooting involved RHEL, this summary reflects the successful general process) and configured the entire stack to run from a GitHub Actions workflow.
+Production-grade Terraform module for automated deployment of Cloud-Init ready VMs on Proxmox VE clusters. Features multi-VM scaling, SSH key authentication, and GitHub Actions CI/CD pipeline.
+
+---
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Architecture](#architecture)
+- [Prerequisites](#prerequisites)
+- [Quick Start](#quick-start)
+- [Configuration](#configuration)
+- [Usage](#usage)
+- [Troubleshooting](#troubleshooting)
+- [What's Next](#whats-next)
+- [License](#license)
+
+---
+
+## Overview
+
+Deploy one or more Ubuntu Cloud-Init VMs on your Proxmox cluster with a single `terraform apply`. This project handles:
+
+| Feature | Details |
+|---------|---------|
+| **Multi-VM Deployment** | Spin up 1–10 identical VMs with configurable `vm_count` |
+| **Cloud-Init Auto-Config** | SSH keys, username, password injected automatically |
+| **Resource Variables** | CPU, RAM, disk size all configurable without code changes |
+| **GitHub Actions CI/CD** | Validate + plan on every push, deploy on main branch |
+| **Debug Toggle** | Enable verbose logging via variable (disabled by default) |
+
+---
+
+## Architecture
+
+```
+                    GitHub Repository
+                    (main.tf, variables.tf, deploy.yml)
+                              |
+                              v
+                    GitHub Actions Runner (self-hosted)
+                              |
+                              |  terraform plan / apply
+                              v
+                    +---------------------------+
+                    |      Proxmox VE Cluster   |
+                    |                           |
+                    |  +---------------------+  |
+                    |  |  Clone Template     |  |
+                    |  |  (ubuntu-24-ci)     |  |
+                    |  +--------+------------+  |
+                    |           |               |
+                    |           v               |
+                    |  +---------------------+  |
+          +-------> |  Deploy VMs x N       |  |
+          |         |  (VM template-1..N)   |  |
+          |         +--------+--------------+  |
+          |                  |                 |
+          |       +----------+-----------+     |
+          |       |  VM1 (virtio/net)    |     |
+          |       |  VM2 (virtio/net)    |     |
+          |       |  ...                 |     |
+          |       |  VMN (virtio/net)    |     |
+          |       +----------------------+     |
+          v                                    v
+     Developer / CI Script              Network (vmbr0)
+     (get VM IPs via Proxmox API)       (DHCP assignment)
+```
 
 ---
 
 ## Prerequisites
 
-Before starting, ensure you have:
-
-1.  A functioning Proxmox VE Cluster.
-2.  A GitHub repository with a configured self-hosted GitHub Actions runner pointing to the Proxmox environment.
-3.  Proxmox API credentials (Token ID and Secret) stored securely as GitHub Secrets (`PM_API_TOKEN_ID`, `PM_API_TOKEN_SECRET`, etc.).
-4.  An SSH Public Key stored as a GitHub Secret (`SSH_PUBLIC_KEY`).
-
----
-
-## 1. Cloud Image Preparation (Base Template Creation)
-
-The key to stable deployment is a clean, compliant base template.
-
-### A. Create the Base Cloud-Init Image
-
-1.  **Download Image:** Download a standard Ubuntu Cloud Image (e.g., Ubuntu 24.04 LTS cloud image).
-2.  **Import to Proxmox:** Import the QCOW2 file into your desired storage (e.g., `local-zfs`).
-3.  **Create VM:** Create a new VM and attach the imported disk.
-
-### B. Template Internal Cleanup (Crucial Fixes)
-
-Before converting the VM, essential cleanup and service fixes must be performed inside the Guest OS:
-
-1.  **Install/Enable Services:** Ensure `cloud-init` and the optional `qemu-guest-agent` are installed and enabled.
-2.  **Configure User:** Ensure a base user is configured (e.g., the default user or a custom one).
-3.  **Clean System Identifiers:** Clear unique system identifiers and Cloud-Init history:
-    ```bash
-    sudo cloud-init clean --logs
-    sudo rm -f /etc/machine-id
-    sudo touch /etc/machine-id
-    ```
-4.  **Finalize:** Shut down the VM. **Do not reboot** before converting.
-
-### C. Convert to Template
-
-1.  In the Proxmox GUI, right-click the powered-off VM.
-2.  Select **More** $\rightarrow$ **Convert to Template** (e.g., named `ubuntu-24-ci`).
+1. **Proxmox VE Cluster** — Version 7.x or 8.x
+2. **Cloud-Init Template** — A prepared Ubuntu 24.04 Cloud-Init base template on your cluster
+3. **Proxmox API Token** — Created with read/write permissions
+4. **GitHub Repository** — With a self-hosted Actions runner connected to your Proxmox network
+5. **SSH Key Pair** — Public key stored as a GitHub Secret
 
 ---
 
-## 2. Terraform Configuration (`main.tf`)
+## Quick Start
 
-The Terraform code defines the VM structure and injects the user configuration.
+### Step 1: Prepare Your Cloud-Init Template
 
-### A. Provider and Stability
+Run these commands on your Proxmox host to create a reusable base template:
 
-The configuration uses a specific version constraint to avoid known bugs and explicitly uses variables for security:
+```bash
+# Download Ubuntu 24.04 Cloud Image
+wget https://cloud-images.ubuntu.com/noble/current/noble-server-cloud-image-amd64.img
 
-```terraform
-terraform {
-  required_providers {
-    proxmox = {
-      source  = "telmate/proxmox"
-      # Using a known stable/RC version to avoid crashes
-      version = "3.0.2-rc05" 
-    }
-  }
-}
-# Connection details are automatically read from environment variables (secrets)
-provider "proxmox" {
-  pm_tls_insecure = true
-}
+# Import to Proxmox storage
+qm importdisk 9999 noble-server-cloud-image-amd64.img local-zfs
+
+# Create a new VM for templating
+qm create 9999 --name ubuntu-24-ci-template --memory 4096 --cores 4
+
+# Attach the imported disk
+qm set 9999 --scsi0 local-zfs:vm-9999-disk-0
+
+# Add cloud-init disk
+qm set 9999 --ide2 local-zfs:cloudinit
+
+# Set boot order
+qm set 9999 --boot c --bootdisk scsi0
+
+# Enable qemu guest agent
+qm set 9999 --agent enabled=1
+
+# Start and configure the VM
+qm start 9999
 ```
 
-### B. VM Resource and Cloud-Init Injection
+SSH into the VM and run cleanup:
 
-The resource defines the VM and uses the individual arguments (ciuser, cipassword, sshkeys) which were found to be the only syntactically supported method for this version:
+```bash
+# Install/update services
+apt update && apt install -y cloud-init qemu-guest-agent
+systemctl enable cloud-init
+systemctl enable qemu-guest-agent
 
-```terraform
-resource "proxmox_vm_qemu" "ubuntu-24-ci" {
-  name        = "ubuntu-24-ci-${count.index + 1}"
-  clone       = "ubuntu-24-ci"
+# Clear system identifiers
+cloud-init clean --logs
+rm -f /etc/machine-id
+touch /etc/machine-id
 
-  # Hardware Fixes
-  scsihw      = "virtio-scsi-single"
-  cpu { cores = 4; sockets = 1 } 
-
-  # Disk Definition
-  disk { slot = "scsi0"; size = "32G"; type = "disk"; storage = "local-zfs" }
-  # The Cloud-Init drive is automatically managed via the template and OS_type
-
-  # Cloud-Init Injection (References variables defined in variables.tf)
-  os_type     = "cloud-init"
-  ipconfig0   = "ip=dhcp"
-  ciuser      = var.vm_user
-  cipassword  = var.vm_password
-  sshkeys     = var.ssh_public_key
-  # ... other essential hardware (network, serial, boot) ...
-}
+# Shut down (DO NOT reboot)
+poweroff
 ```
-## 3. GitHub Actions Workflow (deploy.yml)
 
-The workflow securely passes the sensitive configuration values to Terraform.
+Convert to template:
 
-1. Secure Variables: Secrets are loaded into environment variables (env: block).
-
-2. Command Execution: The values are passed as Terraform variables using the -var flag.
-
-```YAML
-# deploy.yml (Snippet for Plan Step)
-
-      - name: Terraform Plan
-        env:
-            SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
-            VM_PASSWORD: ${{ secrets.VM_PASSWORD }}
-        run: terraform plan -var="ssh_public_key=$SSH_PUBLIC_KEY" -var="vm_user=test" -var="vm_password=$VM_PASSWORD"
+```bash
+qm template 9999
+qm set 9999 --description "Ubuntu 24.04 Cloud-Init Base Template"
 ```
+
+### Step 2: Configure GitHub Secrets
+
+Add these secrets to your GitHub repository (**Settings → Secrets and variables → Actions**):
+
+| Secret Name | Description | Example |
+|-------------|-------------|---------|
+| `PM_API_URL` | Proxmox API endpoint | `https://proxmox.example.com:8006/api2/json` |
+| `PM_API_TOKEN_ID` | API token ID | `root@pam!terraform` |
+| `PM_API_TOKEN_SECRET` | API token secret (UUID) | `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` |
+| `SSH_PUBLIC_KEY` | Your SSH public key | `ssh-ed25519 AAAA... user@host` |
+| `VM_PASSWORD` | Initial VM password | *(generate securely)* |
+
+### Step 3: Deploy
+
+```bash
+# Clone and initialize
+git clone https://github.com/<your-username>/proxmox-automation.git
+cd proxmox-automation
+terraform init
+
+# Preview deployment
+terraform plan -var="ssh_public_key=$(cat ~/.ssh/id_ed25519.pub)" \
+              -var="vm_password=your-strong-password"
+
+# Deploy VMs
+terraform apply -var="ssh_public_key=$(cat ~/.ssh/id_ed25519.pub)" \
+                -var="vm_password=your-strong-password"
+```
+
+---
+
+## Configuration
+
+### Input Variables
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `vm_user` | `string` | `"deploy"` | Username for cloud-init |
+| `vm_password` | `string` | *(required)* | Initial password (sensitive) |
+| `ssh_public_key` | `string` | *(required)* | SSH public key for authentication |
+| `vm_count` | `number` | `1` | Number of VMs to deploy (1–10) |
+| `target_node` | `string` | `"pve1"` | Proxmox cluster node |
+| `clone_source` | `string` | `"ubuntu-24-ci"` | Base template name |
+| `storage_pool` | `string` | `"local-zfs"` | Storage pool for VM disks |
+| `network_bridge` | `string` | `"vmbr0"` | Network bridge |
+| `vm_cores` | `number` | `4` | CPU cores per VM |
+| `vm_sockets` | `number` | `1` | CPU sockets per VM |
+| `vm_memory` | `number` | `4096` | RAM per VM in MB |
+| `vm_disk_size` | `number` | `32` | Disk size per VM in GB |
+| `enable_debug_logging` | `bool` | `false` | Enable provider debug logging |
+
+### Example: Deploy 3 VMs with Custom Resources
+
+```bash
+terraform apply \
+  -var="vm_count=3" \
+  -var="vm_cores=8" \
+  -var="vm_memory=8192" \
+  -var="vm_disk_size=64" \
+  -var="ssh_public_key=$(cat ~/.ssh/id_ed25519.pub)" \
+  -var="vm_password=$(cat ~/.secrets/vm-password)"
+```
+
+---
 
 ## Usage
 
-Ensure all secrets (PM_API_..., VM_PASSWORD, SSH_PUBLIC_KEY) are set in your GitHub repository.
+### Get Deployed VM Names
 
-1. Commit the Terraform files (main.tf, variables.tf) and the workflow file (deploy.yml).
+```bash
+terraform output vm_names
+# Output:
+# vm_names = [
+#   "ubuntu-24-ci-1",
+#   "ubuntu-24-ci-2",
+# ]
+```
 
-2. Go to the Actions tab in GitHub and manually run the workflow.
+### SSH Into a VM
 
-3. Upon completion, the VM will be available and configurable using the injected username (test) and SSH key.
+```bash
+# After Terraform applies, get the VM IP from your Proxmox GUI or DHCP server
+ssh deploy@<VM_IP_ADDRESS>
+```
+
+### Destroy All Deployed VMs
+
+```bash
+terraform destroy -var="ssh_public_key=$(cat ~/.ssh/id_ed25519.pub)" \
+                  -var="vm_password=your-strong-password"
+```
+
+---
+
+## Troubleshooting
+
+### VM Fails to Boot After Clone
+
+**Symptom:** VM shows "no bootable medium" in Proxmox GUI
+
+**Fix:** Verify the clone template has a valid OS disk (not just cloud-init disk). Run:
+```bash
+qm list
+# Check that your template (e.g., ubuntu-24-ci) shows a disk under the DISK field
+```
+
+### Cloud-Init Configuration Not Applied
+
+**Symptom:** VM boots but SSH key/password injection doesn't work
+
+**Fix:**
+1. Confirm the template has `cloud-init` installed: `cloud-init --version`
+2. Ensure the cloud-init disk slot is `ide2` (reserved by Proxmox)
+3. Check VM logs: `qm terminal <VM_ID>` → examine `/var/log/cloud-init.log`
+
+### API Authentication Errors
+
+**Symptom:** `Error: POST https://.../access/tokens: 401 Unauthorized`
+
+**Fix:**
+1. Verify `PM_API_TOKEN_ID` and `PM_API_TOKEN_SECRET` are set correctly in GitHub Secrets
+2. Confirm the token has **Read/Write** permissions on the target node
+3. Check token ID format: `<user>@<realm>!<token-name>` (e.g., `root@pam!terraform`)
+
+### Debug Logging Enabled in Production
+
+**Symptom:** Rapid disk growth from `terraform-plugin-proxmox.log`
+
+**Fix:** Set `enable_debug_logging = false` in your `.tfvars` or CLI variables. The log is disabled by default.
+
+---
+
+## What's Next
+
+Suggested enhancements for production use:
+
+1. **Dynamic IP Output** — Add a post-deploy script to fetch VM IPs from Proxmox API and output them
+2. **Custom Templates Per OS** — Add variables for Ubuntu 22.04, Debian, or RHEL templates
+3. **Floating IP Support** — Auto-assign and track IPs via DHCP lease parsing
+4. **Snapshot Before Deploy** — Create a pre-deploy snapshot of the base template for rollback
+5. **Grafana Dashboard** — Monitor Proxmox cluster health alongside deployed VMs
+
+---
+
+## License
+
+[MIT License](LICENSE) — Feel free to use this for your own projects.
+
+---
+
+## Author
+
+**Nicolas Teixeira** — [GitHub](https://github.com/nicolasnkGH) | DevOps & Cloud Engineer
